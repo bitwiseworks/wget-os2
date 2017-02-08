@@ -2477,11 +2477,16 @@ get_max_length (const char *path, int length, int name)
     {
       errno = 0;
       /* For an empty path query the current directory. */
+#if !defined(__OS2__)
 #if HAVE_PATHCONF
       ret = pathconf (*p ? p : ".", name);
       if (!(ret < 0 && errno == ENOENT))
         break;
 #else
+      ret = PATH_MAX;
+#endif
+#else
+      /* remove this complete define, when libc go a fix for ticket #310 */      
       ret = PATH_MAX;
 #endif
 
