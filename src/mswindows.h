@@ -1,7 +1,6 @@
 /* Declarations for windows
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010, 2011, 2015 Free Software
-   Foundation, Inc.
+   Copyright (C) 1996-2011, 2015, 2018-2019 Free Software Foundation,
+   Inc.
 
 This file is part of GNU Wget.
 
@@ -50,12 +49,15 @@ as that of the covered work.  */
 # define EAI_SYSTEM -1   /* value doesn't matter */
 #endif
 
-/* Declares file access functions, such as open, creat, access, and
+/* Declares file access functions, such as open, create, access, and
    chmod.  Unix declares these in unistd.h and fcntl.h.  */
 #include <io.h>
 
 /* Declares getpid(). */
 #include <process.h>
+
+/* Declares inet_ntop() and inet_pton(). */
+#include <arpa/inet.h>
 
 /* We have strcasecmp and strncasecmp, just under different names.  */
 #ifndef HAVE_STRCASECMP
@@ -84,11 +86,6 @@ typedef __int64 wgint;
 #endif
 
 #define PATH_SEPARATOR '\\'
-
-/* Additional declarations needed for IPv6: */
-#ifdef ENABLE_IPV6
-const char *inet_ntop (int, const void *, char *, socklen_t);
-#endif
 
 /* ioctl needed by set_windows_fd_as_blocking_socket() */
 #include <sys/ioctl.h>

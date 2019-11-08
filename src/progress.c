@@ -1,6 +1,6 @@
 /* Download progress.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010, 2011, 2015 Free Software Foundation, Inc.
+   Copyright (C) 2001-2011, 2015, 2018-2019 Free Software Foundation,
+   Inc.
 
 This file is part of GNU Wget.
 
@@ -75,7 +75,7 @@ static struct progress_implementation implementations[] = {
 static struct progress_implementation *current_impl;
 static int current_impl_locked;
 
-/* Progress implementation used by default.  Can be overriden in
+/* Progress implementation used by default.  Can be overridden in
    wgetrc or by the fallback one.  */
 
 #define DEFAULT_PROGRESS_IMPLEMENTATION "bar"
@@ -737,7 +737,7 @@ update_speed_ring (struct bar_progress *bp, wgint howmuch, double dltime)
   if (bp->stalled)
     {
       bp->stalled = false;
-      /* "recent_age" includes the entired stalled period, which
+      /* "recent_age" includes the entire stalled period, which
          could be very long.  Don't update the speed ring with that
          value because the current bandwidth would start too small.
          Start with an arbitrary (but more reasonable) time value and
@@ -891,11 +891,6 @@ get_eta (int *bcd)
   memcpy (p, s, sizeof (s) - 1);                \
   p += sizeof (s) - 1;                          \
 } while (0)
-
-/* Use move_to_end (s) to get S to point the end of the string (the
-   terminating \0).  This is faster than s+=strlen(s), but some people
-   are confused when they see strchr (s, '\0') in the code.  */
-#define move_to_end(s) s = strchr (s, '\0');
 
 static void
 create_image (struct bar_progress *bp, double dl_total_time, bool done)

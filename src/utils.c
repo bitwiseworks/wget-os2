@@ -1,7 +1,6 @@
 /* Various utility functions.
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010, 2011, 2015 Free Software
-   Foundation, Inc.
+   Copyright (C) 1996-2011, 2015, 2018-2019 Free Software Foundation,
+   Inc.
 
 This file is part of GNU Wget.
 
@@ -45,13 +44,11 @@ as that of the covered work.  */
 #include <assert.h>
 #include <stdarg.h>
 #include <locale.h>
+#include <errno.h>
 
 #if HAVE_UTIME
 # include <sys/types.h>
-# ifdef HAVE_UTIME_H
-#  include <utime.h>
-# endif
-
+# include <utime.h>
 # ifdef HAVE_SYS_UTIME_H
 #  include <sys/utime.h>
 # endif
@@ -72,7 +69,10 @@ as that of the covered work.  */
 #include <setjmp.h>
 
 #include <regex.h>
-#ifdef HAVE_LIBPCRE
+#ifdef HAVE_LIBPCRE2
+# define PCRE2_CODE_UNIT_WIDTH 8
+# include <pcre2.h>
+#elif defined HAVE_LIBPCRE
 # include <pcre.h>
 #endif
 
@@ -107,13 +107,13 @@ as that of the covered work.  */
 #endif /* def __VMS */
 
 #ifdef TESTING
-#include "test.h"
+#include "../tests/unit-tests.h"
 #endif
 
 #include "exits.h"
 #include "c-strcase.h"
 
-static void _Noreturn
+_Noreturn static void
 memfatal (const char *context, long attempted_size)
 {
   /* Make sure we don't try to store part of the log line, and thus
@@ -235,14 +235,20 @@ xstrdup_lower (const char *s)
 
 /* Copy the string formed by two pointers (one on the beginning, other
    on the char after the last char) to a new, malloc-ed location.
-   0-terminate it.  */
+   0-terminate it.
+   If both pointers are NULL, the function returns an empty string.  */
 char *
 strdupdelim (const char *beg, const char *end)
 {
-  char *res = xmalloc (end - beg + 1);
-  memcpy (res, beg, end - beg);
-  res[end - beg] = '\0';
-  return res;
+  if (beg && beg <= end)
+    {
+      char *res = xmalloc (end - beg + 1);
+      memcpy (res, beg, end - beg);
+      res[end - beg] = '\0';
+      return res;
+    }
+
+  return xstrdup("");
 }
 
 /* Parse a string containing comma-separated elements, and return a
@@ -292,13 +298,6 @@ sepstring (const char *s)
    vsnprintf until the correct size is found.  Since Wget also ships a
    fallback implementation of vsnprintf, this should be portable.  */
 
-/* Constant is using for limits memory allocation for text buffer.
-   Applicable in situation when: vasprintf is not available in the system
-   and vsnprintf return -1 when long line is truncated (in old versions of
-   glibc and in other system where C99 doesn`t support) */
-
-#define FMT_MAX_LENGTH 1048576
-
 char *
 aprintf (const char *fmt, ...)
 {
@@ -317,6 +316,13 @@ aprintf (const char *fmt, ...)
     return NULL;
   return str;
 #else  /* not HAVE_VASPRINTF */
+
+/* Constant is using for limits memory allocation for text buffer.
+   Applicable in situation when: vasprintf is not available in the system
+   and vsnprintf return -1 when long line is truncated (in old versions of
+   glibc and in other system where C99 doesn`t support) */
+
+#define FMT_MAX_LENGTH 1048576
 
   /* vasprintf is unavailable.  snprintf into a small buffer and
      resize it as necessary. */
@@ -467,7 +473,7 @@ fork_to_background (void)
 #else /* def __VMS */
 
 #if !defined(WINDOWS) && !defined(MSDOS)
-void
+bool
 fork_to_background (void)
 {
   pid_t pid;
@@ -512,6 +518,8 @@ fork_to_background (void)
     DEBUGP (("Failed to redirect stdout to /dev/null.\n"));
   if (freopen ("/dev/null", "w", stderr) == NULL)
     DEBUGP (("Failed to redirect stderr to /dev/null.\n"));
+
+  return logfile_changed;
 }
 #endif /* !WINDOWS && !MSDOS */
 
@@ -525,40 +533,13 @@ fork_to_background (void)
 void
 touch (const char *file, time_t tm)
 {
-#if HAVE_UTIME
-# ifdef HAVE_STRUCT_UTIMBUF
   struct utimbuf times;
-# else
-  struct {
-    time_t actime;
-    time_t modtime;
-  } times;
-# endif
+
   times.modtime = tm;
   times.actime = time (NULL);
+
   if (utime (file, &times) == -1)
     logprintf (LOG_NOTQUIET, "utime(%s): %s\n", file, strerror (errno));
-#else
-  struct timespec timespecs[2];
-  int fd;
-
-  fd = open (file, O_WRONLY);
-  if (fd < 0)
-    {
-      logprintf (LOG_NOTQUIET, "open(%s): %s\n", file, strerror (errno));
-      return;
-    }
-
-  timespecs[0].tv_sec = time (NULL);
-  timespecs[0].tv_nsec = 0L;
-  timespecs[1].tv_sec = tm;
-  timespecs[1].tv_nsec = 0L;
-
-  if (futimens (fd, timespecs) == -1)
-    logprintf (LOG_NOTQUIET, "futimens(%s): %s\n", file, strerror (errno));
-
-  close (fd);
-#endif
 }
 
 /* Checks if FILE is a symbolic link, and removes it if it is.  Does
@@ -567,7 +548,7 @@ int
 remove_link (const char *file)
 {
   int err = 0;
-  struct_stat st;
+  struct stat st;
 
   if (lstat (file, &st) == 0 && S_ISLNK (st.st_mode))
     {
@@ -580,21 +561,45 @@ remove_link (const char *file)
   return err;
 }
 
-/* Does FILENAME exist?  This is quite a lousy implementation, since
-   it supplies no error codes -- only a yes-or-no answer.  Thus it
-   will return that a file does not exist if, e.g., the directory is
-   unreadable.  I don't mind it too much currently, though.  The
-   proper way should, of course, be to have a third, error state,
-   other than true/false, but that would introduce uncalled-for
-   additional complexity to the callers.  */
+/* Does FILENAME exist? */
 bool
-file_exists_p (const char *filename)
+file_exists_p (const char *filename, file_stats_t *fstats)
 {
-#ifdef HAVE_ACCESS
-  return access (filename, F_OK) >= 0;
+  struct stat buf;
+
+  if (!filename)
+	  return false;
+
+#if defined(WINDOWS) || defined(__VMS)
+    int ret = stat (filename, &buf);
+    if (ret >= 0)
+    {
+      if (fstats != NULL)
+        fstats->access_err = errno;
+    }
+    return ret >= 0;
 #else
-  struct_stat buf;
-  return stat (filename, &buf) >= 0;
+  errno = 0;
+  if (stat (filename, &buf) == 0 && S_ISREG(buf.st_mode) &&
+              (((S_IRUSR & buf.st_mode) && (getuid() == buf.st_uid))  ||
+               ((S_IRGRP & buf.st_mode) && group_member(buf.st_gid))  ||
+                (S_IROTH & buf.st_mode))) {
+    if (fstats != NULL)
+    {
+      fstats->access_err = 0;
+      fstats->st_ino = buf.st_ino;
+      fstats->st_dev = buf.st_dev;
+    }
+    return true;
+  }
+  else
+  {
+    if (fstats != NULL)
+      fstats->access_err = (errno == 0 ? EACCES : errno);
+    errno = 0;
+    return false;
+  }
+  /* NOTREACHED */
 #endif
 }
 
@@ -603,7 +608,7 @@ file_exists_p (const char *filename)
 bool
 file_non_directory_p (const char *path)
 {
-  struct_stat buf;
+  struct stat buf;
   /* Use lstat() rather than stat() so that symbolic links pointing to
      directories can be identified correctly.  */
   if (lstat (path, &buf) != 0)
@@ -612,7 +617,7 @@ file_non_directory_p (const char *path)
 }
 
 /* Return the size of file named by FILENAME, or -1 if it cannot be
-   opened or seeked into. */
+   opened or sought into. */
 wgint
 file_size (const char *filename)
 {
@@ -630,7 +635,7 @@ file_size (const char *filename)
   fclose (fp);
   return size;
 #else
-  struct_stat st;
+  struct stat st;
   if (stat (filename, &st) < 0)
     return -1;
   return st.st_size;
@@ -662,7 +667,7 @@ unique_name_1 (const char *prefix)
 
   do
     number_to_string (template_tail, count++);
-  while (file_exists_p (template));
+  while (file_exists_p (template, NULL));
 
   return xstrdup (template);
 }
@@ -690,7 +695,7 @@ unique_name (const char *file, bool allow_passthrough)
 {
   /* If the FILE itself doesn't exist, return it without
      modification. */
-  if (!file_exists_p (file))
+  if (!file_exists_p (file, NULL))
     return allow_passthrough ? (char *)file : xstrdup (file);
 
   /* Otherwise, find a numeric suffix that results in unused file name
@@ -819,13 +824,126 @@ fopen_excl (const char *fname, int binary)
   /* Manually check whether the file exists.  This is prone to race
      conditions, but systems without O_EXCL haven't deserved
      better.  */
-  if (file_exists_p (fname))
+  if (file_exists_p (fname, NULL))
     {
       errno = EEXIST;
       return NULL;
     }
   return fopen (fname, binary ? "wb" : "w");
 #endif /* not O_EXCL */
+}
+
+/* fopen_stat() assumes that file_exists_p() was called earlier.
+   file_stats_t passed to this function was returned from file_exists_p()
+   This is to prevent TOCTTOU race condition.
+   Details : FIO45-C from https://www.securecoding.cert.org/
+   Note that for creating a new file, this check is not useful
+
+   Input:
+     fname  => Name of file to open
+     mode   => File open mode
+     fstats => Saved file_stats_t about file that was checked for existence
+
+   Returns:
+     NULL if there was an error
+     FILE * of opened file stream
+*/
+FILE *
+fopen_stat(const char *fname, const char *mode, file_stats_t *fstats)
+{
+  int fd;
+  FILE *fp;
+  struct stat fdstats;
+
+#if defined FUZZING && defined TESTING
+  fp = fopen_wgetrc (fname, mode);
+  return fp;
+#else
+  fp = fopen (fname, mode);
+#endif
+  if (fp == NULL)
+  {
+    logprintf (LOG_NOTQUIET, _("Failed to Fopen file %s\n"), fname);
+    return NULL;
+  }
+  fd = fileno (fp);
+  if (fd < 0)
+  {
+    logprintf (LOG_NOTQUIET, _("Failed to get FD for file %s\n"), fname);
+    fclose (fp);
+    return NULL;
+  }
+  memset(&fdstats, 0, sizeof(fdstats));
+  if (fstat (fd, &fdstats) == -1)
+  {
+    logprintf (LOG_NOTQUIET, _("Failed to stat file %s, (check permissions)\n"), fname);
+    fclose (fp);
+    return NULL;
+  }
+#if !(defined(WINDOWS) || defined(__VMS))
+  if (fstats != NULL &&
+      (fdstats.st_dev != fstats->st_dev ||
+       fdstats.st_ino != fstats->st_ino))
+  {
+    /* File changed since file_exists_p() : NOT SAFE */
+    logprintf (LOG_NOTQUIET, _("File %s changed since the last check. Security check failed."), fname);
+    fclose (fp);
+    return NULL;
+  }
+#endif
+
+  return fp;
+}
+
+/* open_stat assumes that file_exists_p() was called earlier to save file_stats
+   file_stats_t passed to this function was returned from file_exists_p()
+   This is to prevent TOCTTOU race condition.
+   Details : FIO45-C from https://www.securecoding.cert.org/
+   Note that for creating a new file, this check is not useful
+
+
+   Input:
+     fname  => Name of file to open
+     flags  => File open flags
+     mode   => File open mode
+     fstats => Saved file_stats_t about file that was checked for existence
+
+   Returns:
+     -1 if there was an error
+     file descriptor of opened file stream
+*/
+int
+open_stat(const char *fname, int flags, mode_t mode, file_stats_t *fstats)
+{
+  int fd;
+  struct stat fdstats;
+
+  fd = open (fname, flags, mode);
+  if (fd < 0)
+  {
+    logprintf (LOG_NOTQUIET, _("Failed to open file %s, reason :%s\n"), fname, strerror(errno));
+    return -1;
+  }
+  memset(&fdstats, 0, sizeof(fdstats));
+  if (fstat (fd, &fdstats) == -1)
+  {
+    logprintf (LOG_NOTQUIET, _("Failed to stat file %s, error: %s\n"), fname, strerror(errno));
+    close (fd);
+    return -1;
+  }
+#if !(defined(WINDOWS) || defined(__VMS))
+  if (fstats != NULL &&
+      (fdstats.st_dev != fstats->st_dev ||
+       fdstats.st_ino != fstats->st_ino))
+  {
+    /* File changed since file_exists_p() : NOT SAFE */
+    logprintf (LOG_NOTQUIET, _("Trying to open file %s but it changed since last check. Security check failed."), fname);
+    close (fd);
+    return -1;
+  }
+#endif
+
+  return fd;
 }
 
 /* Create DIRECTORY.  If some of the pathname components of DIRECTORY
@@ -856,7 +974,7 @@ make_directory (const char *directory)
       /* Check whether the directory already exists.  Allow creation of
          of intermediate directories to fail, as the initial path components
          are not necessarily directories!  */
-      if (!file_exists_p (dir))
+      if (!file_exists_p (dir, NULL))
         ret = mkdir (dir, 0777);
       else
         ret = 0;
@@ -1043,7 +1161,7 @@ accdir (const char *directory)
 bool
 match_tail (const char *string, const char *tail, bool fold_case)
 {
-  int pos = strlen (string) - strlen (tail);
+  int pos = (int) strlen (string) - (int) strlen (tail);
 
   if (pos < 0)
     return false;  /* tail is longer than string.  */
@@ -1169,6 +1287,7 @@ wget_read_file (const char *file)
 
   /* Some magic in the finest tradition of Perl and its kin: if FILE
      is "-", just use stdin.  */
+#ifndef FUZZING
   if (HYPHENP (file))
     {
       fd = fileno (stdin);
@@ -1177,6 +1296,7 @@ wget_read_file (const char *file)
          redirected from a regular file, mmap() will still work.  */
     }
   else
+#endif
     fd = open (file, O_RDONLY);
   if (fd < 0)
     return NULL;
@@ -1184,7 +1304,7 @@ wget_read_file (const char *file)
 
 #ifdef HAVE_MMAP
   {
-    struct_fstat buf;
+    struct stat buf;
     if (fstat (fd, &buf) < 0)
       goto mmap_lose;
     fm->length = buf.st_size;
@@ -1327,7 +1447,7 @@ merge_vecs (char **v1, char **v2)
   for (j = 0; v2[j]; j++)
     ;
   /* Reallocate v1.  */
-  v1 = xrealloc (v1, (i + j + 1) * sizeof (char **));
+  v1 = xrealloc (v1, (i + j + 1) * sizeof (char *));
   memcpy (v1 + i, v2, (j + 1) * sizeof (char *));
   xfree (v2);
   return v1;
@@ -1600,7 +1720,7 @@ numdigit (wgint number)
 {
   int cnt = 1;
   if (number < 0)
-    ++cnt;                      /* accomodate '-' */
+    ++cnt;                      /* accommodate '-' */
   while ((number /= 10) != 0)
     ++cnt;
   return cnt;
@@ -1930,7 +2050,7 @@ random_float (void)
 
 static sigjmp_buf run_with_timeout_env;
 
-static void _Noreturn
+_Noreturn static void
 abort_run_with_timeout (int sig _GL_UNUSED)
 {
   assert (sig == SIGALRM);
@@ -2045,12 +2165,15 @@ run_with_timeout (double timeout, void (*fun) (void *), void *arg)
       return false;
     }
 
-  signal (SIGALRM, abort_run_with_timeout);
   if (SETJMP (run_with_timeout_env) != 0)
     {
       /* Longjumped out of FUN with a timeout. */
       signal (SIGALRM, SIG_DFL);
       return true;
+    }
+  else
+    {
+      signal (SIGALRM, abort_run_with_timeout);
     }
   alarm_set (timeout);
   fun (arg);
@@ -2140,7 +2263,7 @@ xsleep (double seconds)
    base64 data.  */
 
 size_t
-base64_encode (const void *data, size_t length, char *dest)
+wget_base64_encode (const void *data, size_t length, char *dest)
 {
   /* Conversion table.  */
   static const char tbl[64] = {
@@ -2197,7 +2320,7 @@ base64_encode (const void *data, size_t length, char *dest)
 
 /* Decode data from BASE64 (a null-terminated string) into memory
    pointed to by DEST.  DEST is assumed to be large enough to
-   accomodate the decoded data, which is guaranteed to be no more than
+   accommodate the decoded data, which is guaranteed to be no more than
    3/4*strlen(base64).
 
    Since DEST is assumed to contain binary data, it is not
@@ -2208,7 +2331,7 @@ base64_encode (const void *data, size_t length, char *dest)
    This function originates from Free Recode.  */
 
 ssize_t
-base64_decode (const char *base64, void *dest)
+wget_base64_decode (const char *base64, void *dest, size_t size)
 {
   /* Table of base64 values for first 128 characters.  Note that this
      assumes ASCII (but so does Wget in other places).  */
@@ -2232,7 +2355,8 @@ base64_decode (const char *base64, void *dest)
 #define IS_BASE64(c) ((IS_ASCII (c) && BASE64_CHAR_TO_VALUE (c) >= 0) || c == '=')
 
   const char *p = base64;
-  char *q = dest;
+  unsigned char *q = dest;
+  ssize_t n = 0;
 
   while (1)
     {
@@ -2254,7 +2378,12 @@ base64_decode (const char *base64, void *dest)
       if (c == '=' || !IS_BASE64 (c))
         return -1;              /* illegal char while decoding base64 */
       value |= BASE64_CHAR_TO_VALUE (c) << 12;
-      *q++ = value >> 16;
+      if (size)
+        {
+          *q++ = value >> 16;
+          size--;
+        }
+      n++;
 
       /* Process third byte of a quadruplet.  */
       NEXT_CHAR (c, p);
@@ -2274,7 +2403,12 @@ base64_decode (const char *base64, void *dest)
         }
 
       value |= BASE64_CHAR_TO_VALUE (c) << 6;
-      *q++ = 0xff & value >> 8;
+      if (size)
+        {
+          *q++ = 0xff & value >> 8;
+          size--;
+        }
+      n++;
 
       /* Process fourth byte of a quadruplet.  */
       NEXT_CHAR (c, p);
@@ -2286,13 +2420,35 @@ base64_decode (const char *base64, void *dest)
         return -1;              /* illegal char while decoding base64 */
 
       value |= BASE64_CHAR_TO_VALUE (c);
-      *q++ = 0xff & value;
+      if (size)
+        {
+          *q++ = 0xff & value;
+          size--;
+        }
+      n++;
     }
 #undef IS_BASE64
 #undef BASE64_CHAR_TO_VALUE
 
-  return q - (char *) dest;
+  return n;
 }
+
+#ifdef HAVE_LIBPCRE2
+/* Compiles the PCRE2 regex. */
+void *
+compile_pcre2_regex (const char *str)
+{
+  int errornumber;
+  PCRE2_SIZE erroroffset;
+  pcre2_code *regex = pcre2_compile((PCRE2_SPTR) str, PCRE2_ZERO_TERMINATED, 0, &errornumber, &erroroffset, NULL);
+  if (! regex)
+    {
+      fprintf (stderr, _("Invalid regular expression %s, PCRE2 error %d\n"),
+               quote (str), errornumber);
+    }
+  return regex;
+}
+#endif
 
 #ifdef HAVE_LIBPCRE
 /* Compiles the PCRE regex. */
@@ -2306,7 +2462,6 @@ compile_pcre_regex (const char *str)
     {
       fprintf (stderr, _("Invalid regular expression %s, %s\n"),
                quote (str), errbuf);
-      return false;
     }
   return regex;
 }
@@ -2317,6 +2472,11 @@ void *
 compile_posix_regex (const char *str)
 {
   regex_t *regex = xmalloc (sizeof (regex_t));
+#ifdef TESTING
+  /* regcomp might be *very* cpu+memory intensive,
+   *  see https://sourceware.org/glibc/wiki/Security%20Exceptions */
+  str = "a";
+#endif
   int errcode = regcomp ((regex_t *) regex, str, REG_EXTENDED | REG_NOSUB);
   if (errcode != 0)
     {
@@ -2332,6 +2492,34 @@ compile_posix_regex (const char *str)
 
   return regex;
 }
+
+#ifdef HAVE_LIBPCRE2
+/* Matches a PCRE2 regex.  */
+bool
+match_pcre2_regex (const void *regex, const char *str)
+{
+  int rc;
+  pcre2_match_data *match_data;
+
+  match_data = pcre2_match_data_create_from_pattern(regex, NULL);
+
+  if (match_data)
+    {
+      rc = pcre2_match(regex, (PCRE2_SPTR) str, strlen(str), 0, 0, match_data, NULL);
+      pcre2_match_data_free(match_data);
+    }
+  else
+	  rc = PCRE2_ERROR_NOMEMORY;
+
+  if (rc < 0 && rc != PCRE2_ERROR_NOMATCH)
+    {
+      logprintf (LOG_VERBOSE, _("Error while matching %s: %d\n"),
+                 quote (str), rc);
+    }
+
+  return rc >= 0;
+}
+#endif
 
 #ifdef HAVE_LIBPCRE
 #define OVECCOUNT 30
@@ -2413,17 +2601,17 @@ mergesort_internal (void *base, void *temp, size_t size, size_t from, size_t to,
 }
 
 /* Stable sort with interface exactly like standard library's qsort.
-   Uses mergesort internally, allocating temporary storage with
-   alloca.  */
+   Uses mergesort internally. */
 
 void
 stable_sort (void *base, size_t nmemb, size_t size,
              int (*cmpfun) (const void *, const void *))
 {
-  if (size > 1)
+  if (nmemb > 1 && size > 1)
     {
-      void *temp = alloca (nmemb * size * sizeof (void *));
+      void *temp = xmalloc (nmemb * size);
       mergesort_internal (base, temp, size, 0, nmemb - 1, cmpfun);
+      xfree(temp);
     }
 }
 
@@ -2524,7 +2712,7 @@ wg_hex_to_string (char *str_buffer, const char *hex_buffer, size_t hex_len)
   for (i = 0; i < hex_len; i++)
     {
       /* Each byte takes 2 characters.  */
-      sprintf (str_buffer + 2 * i, "%02x", hex_buffer[i] & 0xFF);
+      sprintf (str_buffer + 2 * i, "%02x", (unsigned) (hex_buffer[i] & 0xFF));
     }
 
   /* Null-terminate result.  */
@@ -2588,7 +2776,7 @@ wg_pubkey_pem_to_der (const char *pem, unsigned char **der, size_t *der_len)
 
   base64data = xmalloc (BASE64_LENGTH(stripped_pem_count));
 
-  size = base64_decode (stripped_pem, base64data);
+  size = wget_base64_decode (stripped_pem, base64data, BASE64_LENGTH(stripped_pem_count));
 
   if (size < 0) {
     xfree (base64data);           /* malformed base64 from server */
@@ -2627,54 +2815,65 @@ wg_pin_peer_pubkey (const char *pinnedpubkey, const char *pubkey, size_t pubkeyl
     return result;
 
   /* only do this if pinnedpubkey starts with "sha256//", length 8 */
-  if (strncmp (pinnedpubkey, "sha256//", 8) == 0) {
-    /* compute sha256sum of public key */
-    sha256sumdigest = xmalloc (SHA256_DIGEST_SIZE);
-    sha256_buffer (pubkey, pubkeylen, sha256sumdigest);
-    expectedsha256sumdigest = xmalloc (SHA256_DIGEST_SIZE + 1);
+  if (strncmp (pinnedpubkey, "sha256//", 8) == 0)
+    {
+      /* compute sha256sum of public key */
+      sha256sumdigest = xmalloc (SHA256_DIGEST_SIZE);
+      sha256_buffer (pubkey, pubkeylen, sha256sumdigest);
+      expectedsha256sumdigest = xmalloc (SHA256_DIGEST_SIZE);
 
-    /* it starts with sha256//, copy so we can modify it */
-    pinkeylen = strlen (pinnedpubkey) + 1;
-    pinkeycopy = xmalloc (pinkeylen);
-    memcpy (pinkeycopy, pinnedpubkey, pinkeylen);
+      /* it starts with sha256//, copy so we can modify it */
+      pinkeylen = strlen (pinnedpubkey) + 1;
+      pinkeycopy = xmalloc (pinkeylen);
+      memcpy (pinkeycopy, pinnedpubkey, pinkeylen);
 
-    /* point begin_pos to the copy, and start extracting keys */
-    begin_pos = pinkeycopy;
-    do
-      {
-        end_pos = strstr (begin_pos, ";sha256//");
-        /*
-         * if there is an end_pos, null terminate,
-         * otherwise it'll go to the end of the original string
-         */
-        if (end_pos)
-          end_pos[0] = '\0';
+      /* point begin_pos to the copy, and start extracting keys */
+      begin_pos = pinkeycopy;
+      do
+        {
+          end_pos = strstr (begin_pos, ";sha256//");
+          /*
+           * if there is an end_pos, null terminate,
+           * otherwise it'll go to the end of the original string
+           */
+          if (end_pos)
+            end_pos[0] = '\0';
 
-        /* decode base64 pinnedpubkey, 8 is length of "sha256//" */
-        decoded_hash_length = base64_decode (begin_pos + 8, expectedsha256sumdigest);
-        /* if valid base64, compare sha256 digests directly */
-        if (SHA256_DIGEST_SIZE == decoded_hash_length &&
-           !memcmp (sha256sumdigest, expectedsha256sumdigest, SHA256_DIGEST_SIZE)) {
-          result = true;
-          break;
+          /* decode base64 pinnedpubkey, 8 is length of "sha256//" */
+          decoded_hash_length = wget_base64_decode (begin_pos + 8, expectedsha256sumdigest, SHA256_DIGEST_SIZE);
+
+          /* if valid base64, compare sha256 digests directly */
+          if (SHA256_DIGEST_SIZE == decoded_hash_length)
+            {
+              if (!memcmp (sha256sumdigest, expectedsha256sumdigest, SHA256_DIGEST_SIZE))
+                {
+                  result = true;
+                  break;
+                }
+            }
+          else
+            logprintf (LOG_VERBOSE, _ ("Skipping key with wrong size (%d/%d): %s\n"),
+                       (int) (strlen (begin_pos + 8) * 3) / 4, SHA256_DIGEST_SIZE,
+                       quote (begin_pos + 8));
+
+          /*
+           * change back the null-terminator we changed earlier,
+           * and look for next begin
+           */
+          if (end_pos)
+            {
+              end_pos[0] = ';';
+              begin_pos = strstr (end_pos, "sha256//");
+            }
         }
+      while (end_pos && begin_pos);
 
-        /*
-         * change back the null-terminator we changed earlier,
-         * and look for next begin
-         */
-        if (end_pos) {
-          end_pos[0] = ';';
-          begin_pos = strstr (end_pos, "sha256//");
-        }
-      } while (end_pos && begin_pos);
+      xfree (sha256sumdigest);
+      xfree (expectedsha256sumdigest);
+      xfree (pinkeycopy);
 
-    xfree (sha256sumdigest);
-    xfree (expectedsha256sumdigest);
-    xfree (pinkeycopy);
-
-    return result;
-  }
+      return result;
+    }
 
   /* fall back to assuming this is a file path */
   fm = wget_read_file (pinnedpubkey);
@@ -2694,11 +2893,12 @@ wg_pin_peer_pubkey (const char *pinnedpubkey, const char *pubkey, size_t pubkeyl
     goto cleanup;
 
   /* If the sizes are the same, it can't be base64 encoded, must be der */
-  if (pubkeylen == size) {
-    if (!memcmp (pubkey, fm->content, pubkeylen))
-      result = true;
-    goto cleanup;
-  }
+  if (pubkeylen == size)
+    {
+      if (!memcmp (pubkey, fm->content, pubkeylen))
+        result = true;
+      goto cleanup;
+    }
 
   /*
    * Otherwise we will assume it's PEM and try to decode it
@@ -2720,7 +2920,7 @@ wg_pin_peer_pubkey (const char *pinnedpubkey, const char *pubkey, size_t pubkeyl
   if (pubkeylen == pem_len && !memcmp (pubkey, pem_ptr, pubkeylen))
     result = true;
 
- cleanup:
+cleanup:
   xfree (buf);
   xfree (pem_ptr);
   wget_read_file_free (fm);

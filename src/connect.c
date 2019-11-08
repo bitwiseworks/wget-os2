@@ -1,7 +1,6 @@
 /* Establishing and handling network connections.
-   Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003,
-   2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2015 Free Software
-   Foundation, Inc.
+   Copyright (C) 1995-2011, 2015, 2018-2019 Free Software Foundation,
+   Inc.
 
 This file is part of GNU Wget.
 
@@ -31,6 +30,7 @@ as that of the covered work.  */
 
 #include "wget.h"
 
+#include "exits.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -55,10 +55,6 @@ as that of the covered work.  */
 #include <string.h>
 #include <sys/time.h>
 
-#ifdef ENABLE_IRI
-#include <idn-free.h>
-#endif
-
 #include "utils.h"
 #include "host.h"
 #include "connect.h"
@@ -75,7 +71,7 @@ as that of the covered work.  */
 # endif
 #endif /* ENABLE_IPV6 */
 
-/* Fill SA as per the data in IP and PORT.  SA shoult point to struct
+/* Fill SA as per the data in IP and PORT.  SA should point to struct
    sockaddr_storage if ENABLE_IPV6 is defined, to struct sockaddr_in
    otherwise.  */
 
@@ -279,11 +275,8 @@ connect_to_ip (const ip_address *ip, int port, const char *print)
 
           if (opt.enable_iri && (name = idn_decode ((char *) print)) != NULL)
             {
-              int len = strlen (print) + strlen (name) + 4;
-              str = xmalloc (len);
-              snprintf (str, len, "%s (%s)", name, print);
-              str[len-1] = '\0';
-              idn_free (name);
+              str = aprintf ("%s (%s)", name, print);
+              xfree (name);
             }
 
           logprintf (LOG_VERBOSE, _("Connecting to %s|%s|:%d... "),
@@ -331,8 +324,10 @@ connect_to_ip (const ip_address *ip, int port, const char *print)
       if (bufsize < 512)
         bufsize = 512;          /* avoid pathologically small values */
 #ifdef SO_RCVBUF
-      setsockopt (sock, SOL_SOCKET, SO_RCVBUF,
-                  (void *)&bufsize, (socklen_t)sizeof (bufsize));
+      if (setsockopt (sock, SOL_SOCKET, SO_RCVBUF,
+                  (void *) &bufsize, (socklen_t) sizeof (bufsize)))
+        logprintf (LOG_NOTQUIET, _("setsockopt SO_RCVBUF failed: %s\n"),
+                   strerror (errno));
 #endif
       /* When we add limit_rate support for writing, which is useful
          for POST, we should also set SO_SNDBUF here.  */
@@ -471,7 +466,9 @@ bind_local (const ip_address *bind_address, int *port)
     return -1;
 
 #ifdef SO_REUSEADDR
-  setsockopt (sock, SOL_SOCKET, SO_REUSEADDR, setopt_ptr, setopt_size);
+  if (setsockopt (sock, SOL_SOCKET, SO_REUSEADDR, setopt_ptr, setopt_size))
+    logprintf (LOG_NOTQUIET, _("setsockopt SO_REUSEADDR failed: %s\n"),
+               strerror (errno));
 #endif
 
   xzero (ss);
@@ -689,6 +686,11 @@ select_fd (int fd, double maxtime, int wait_for)
   struct timeval tmout;
   int result;
 
+  if (fd >= FD_SETSIZE)
+    {
+      logprintf (LOG_NOTQUIET, _("Too many fds open.  Cannot use select on a fd >= %d\n"), FD_SETSIZE);
+      exit (WGET_EXIT_GENERIC_ERROR);
+    }
   FD_ZERO (&fdset);
   FD_SET (fd, &fdset);
   if (wait_for & WAIT_FOR_READ)
@@ -713,7 +715,7 @@ select_fd (int fd, double maxtime, int wait_for)
   return result;
 }
 
-/* Return true iff the connection to the remote site established
+/* Return true if the connection to the remote site established
    through SOCK is still open.
 
    Specifically, this function returns true if SOCK is not ready for
@@ -731,6 +733,11 @@ test_socket_open (int sock)
   struct timeval to;
   int ret = 0;
 
+  if (sock >= FD_SETSIZE)
+    {
+      logprintf (LOG_NOTQUIET, _("Too many fds open.  Cannot use select on a fd >= %d\n"), FD_SETSIZE);
+      exit (WGET_EXIT_GENERIC_ERROR);
+    }
   /* Check if we still have a valid (non-EOF) connection.  From Andrew
    * Maholski's code in the Unix Socket FAQ.  */
 
@@ -1033,5 +1040,20 @@ fd_close (int fd)
       hash_table_remove (transport_map, (void *)(intptr_t) fd);
       xfree (info);
       ++transport_map_modified_tick;
+    }
+}
+
+void
+connect_cleanup(void)
+{
+  if (transport_map)
+    {
+      hash_table_iterator iter;
+      for (hash_table_iterate (transport_map, &iter); hash_table_iter_next (&iter); )
+        {
+          xfree (iter.value);
+        }
+      hash_table_destroy (transport_map);
+      transport_map = NULL;
     }
 }

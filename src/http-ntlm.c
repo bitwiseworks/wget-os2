@@ -1,6 +1,6 @@
 /* NTLM code.
-   Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2015 Free
-   Software Foundation, Inc.
+   Copyright (C) 2005-2011, 2015, 2018-2019 Free Software Foundation,
+   Inc.
    Contributed by Daniel Stenberg.
 
 This file is part of GNU Wget.
@@ -122,7 +122,7 @@ ntlm_input (struct ntlmdata *ntlm, const char *header)
 
       DEBUGP (("Received a type-2 NTLM message.\n"));
 
-      size = base64_decode (header, buffer);
+      size = wget_base64_decode (header, buffer, strlen (header));
       if (size < 0)
         return false;           /* malformed base64 from server */
 
@@ -136,13 +136,24 @@ ntlm_input (struct ntlmdata *ntlm, const char *header)
     }
   else
     {
-      if (ntlm->state >= NTLMSTATE_TYPE1)
+      if (ntlm->state == NTLMSTATE_LAST)
+        {
+          DEBUGP (("NTLM auth restarted.\n"));
+          /* no return, continue */
+        }
+      else if (ntlm->state == NTLMSTATE_TYPE3)
+        {
+          DEBUGP (("NTLM handshake rejected.\n"));
+          ntlm->state = NTLMSTATE_NONE;
+          return false;
+        }
+      else if (ntlm->state >= NTLMSTATE_TYPE1)
         {
           DEBUGP (("Unexpected empty NTLM message.\n"));
           return false; /* this is an error */
         }
 
-      DEBUGP (("Empty NTLM message, starting transaction.\n"));
+      DEBUGP (("Empty NTLM message, (re)starting transaction.\n"));
       ntlm->state = NTLMSTATE_TYPE1; /* we should sent away a type-1 */
     }
 
@@ -411,7 +422,7 @@ ntlm_output (struct ntlmdata *ntlm, const char *user, const char *passwd,
     size = 32 + hostlen + domlen;
 
     base64 = (char *) alloca (BASE64_LENGTH (size) + 1);
-    base64_encode (ntlmbuf, size, base64);
+    wget_base64_encode (ntlmbuf, size, base64);
 
     output = concat_strings ("NTLM ", base64, (char *) 0);
     break;
@@ -584,7 +595,7 @@ ntlm_output (struct ntlmdata *ntlm, const char *user, const char *passwd,
 
     /* convert the binary blob into base64 */
     base64 = (char *) alloca (BASE64_LENGTH (size) + 1);
-    base64_encode (ntlmbuf, size, base64);
+    wget_base64_encode (ntlmbuf, size, base64);
 
     output = concat_strings ("NTLM ", base64, (char *) 0);
 
