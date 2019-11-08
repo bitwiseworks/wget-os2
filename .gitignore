@@ -1,0 +1,25 @@
+# ignore autoreconf files
+autom4te.cache/
+
+# ignore regenerated files from autoreconv -fvi
+INSTALL
+Makefile.in
+aclocal.m4
+build-aux/config.guess
+build-aux/config.rpath
+build-aux/config.sub
+build-aux/depcomp
+build-aux/install-sh
+build-aux/mdate-sh
+build-aux/missing
+build-aux/test-driver
+build-aux/texinfo.tex
+configure
+doc/Makefile.in
+lib/Makefile.in
+po/Makefile.in.in
+src/Makefile.in
+src/config.h.in
+testenv/Makefile.in
+tests/Makefile.in
+util/Makefile.in

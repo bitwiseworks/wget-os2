@@ -1,7 +1,6 @@
 /* Declarations for url.c.
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010, 2011, 2015 Free Software
-   Foundation, Inc.
+   Copyright (C) 1996-2011, 2015, 2018-2019 Free Software Foundation,
+   Inc.
 
 This file is part of GNU Wget.
 
@@ -99,10 +98,6 @@ struct url
   /* Username and password (unquoted). */
   char *user;
   char *passwd;
-
-  /* 'host' is allocated by idna_to_ascii_8z() via idn_encode().
-   * Call 'idn_free()' to free this memory. */
-  bool idn_allocated;
 };
 
 /* Function declarations */
@@ -124,6 +119,7 @@ bool url_has_scheme (const char *);
 bool url_valid_scheme (const char *);
 int scheme_default_port (enum url_scheme);
 void scheme_disable (enum url_scheme);
+const char *scheme_leading_string (enum url_scheme);
 
 char *url_string (const struct url *, enum url_auth_mode);
 char *url_file_name (const struct url *, char *);
