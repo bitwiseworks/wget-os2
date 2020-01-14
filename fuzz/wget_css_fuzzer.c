@@ -74,7 +74,7 @@ void exit_wget(int status)
 {
 	longjmp(jmpbuf, 1);
 }
-#elif defined HAVE_DLFCN_H
+#elif defined HAVE_DLFCN_H && !defined(__OS2__)
 #include <dlfcn.h> // dlsym
 #ifndef RTLD_NEXT
 #define RTLD_NEXT RTLD_GLOBAL

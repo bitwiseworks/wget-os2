@@ -99,7 +99,7 @@ int main(int argc, char **argv)
 
 	target_len = strlen(target);
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__OS2__)
 	target_len -= 4; // ignore .exe
 #endif
 
