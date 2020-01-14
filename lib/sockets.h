@@ -38,6 +38,10 @@ int gl_sockets_cleanup (void)
 #endif
   ;
 
+#ifdef __OS2__
+# include <sys/un.h>
+#endif
+
 /* This function is useful it you create a socket using gnulib's
    Winsock wrappers but needs to pass on the socket handle to some
    other library that only accepts sockets. */

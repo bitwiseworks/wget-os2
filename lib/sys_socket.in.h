@@ -88,6 +88,10 @@ typedef unsigned char   sa_family_t;
 #  define GNULIB_defined_sa_family_t 1
 # endif
 #endif
+#if defined(__KLIBC__) && !defined(GNULIB_defined_sa_family_t)
+#  include <sys/un.h>
+#  define GNULIB_defined_sa_family_t 1
+#endif
 
 #if @HAVE_STRUCT_SOCKADDR_STORAGE@
 /* Make the 'struct sockaddr_storage' field 'ss_family' visible on AIX 7.1.  */

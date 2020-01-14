@@ -17,7 +17,12 @@ AC_DEFUN([gl_HEADER_NETDB],
 
   dnl Check for declarations of anything we want to poison if the
   dnl corresponding gnulib module is not in use.
-  gl_WARN_ON_USE_PREPARE([[#include <netdb.h>]],
+  gl_WARN_ON_USE_PREPARE([[
+     #include <netdb.h>
+     #ifdef __OS2__
+     # include <libcx/net.h>
+     #endif
+     ]],
     [getaddrinfo freeaddrinfo gai_strerror getnameinfo])
 ])
 

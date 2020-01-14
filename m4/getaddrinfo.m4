@@ -34,6 +34,9 @@ AC_DEFUN([gl_GETADDRINFO],
 #ifdef HAVE_NETDB_H
 #include <netdb.h>
 #endif
+#ifdef __OS2__
+#include <libcx/net.h>
+#endif
 #include <stddef.h>
 ]], [[getaddrinfo("", "", NULL, NULL);]])],
       [gl_cv_func_getaddrinfo=yes],
@@ -74,6 +77,9 @@ AC_DEFUN([gl_GETADDRINFO],
 #ifdef HAVE_WS2TCPIP_H
 #include <ws2tcpip.h>
 #endif
+#ifdef __OS2__
+#include <libcx/net.h>
+#endif
 #include <stddef.h>
 ]])
   if test $ac_cv_have_decl_gai_strerror = yes; then
@@ -87,6 +93,9 @@ AC_DEFUN([gl_GETADDRINFO],
 #endif
 #ifdef HAVE_WS2TCPIP_H
 #include <ws2tcpip.h>
+#endif
+#ifdef __OS2__
+#include <libcx/net.h>
 #endif
 #include <stddef.h>
 ]])
@@ -103,6 +112,9 @@ AC_DEFUN([gl_GETADDRINFO],
 #endif
 #ifdef HAVE_WS2TCPIP_H
 #include <ws2tcpip.h>
+#endif
+#ifdef __OS2__
+#include <libcx/net.h>
 #endif
 #include <stddef.h>
 extern
@@ -141,6 +153,9 @@ AC_DEFUN([gl_PREREQ_GETADDRINFO], [
   AC_CHECK_MEMBERS([struct sockaddr.sa_len], , , [
 #include <sys/types.h>
 #include <sys/socket.h>
+#ifdef __OS2__
+#include <libcx/net.h>
+#endif
 ])
 
   AC_CHECK_HEADERS_ONCE([netinet/in.h])
@@ -158,6 +173,9 @@ AC_DEFUN([gl_PREREQ_GETADDRINFO], [
 #endif
 #ifdef HAVE_WS2TCPIP_H
 #include <ws2tcpip.h>
+#endif
+#ifdef __OS2__
+#include <libcx/net.h>
 #endif
 ]])
   if test $ac_cv_have_decl_getaddrinfo = no; then
@@ -183,6 +201,9 @@ AC_DEFUN([gl_PREREQ_GETADDRINFO], [
 #endif
 #ifdef HAVE_WS2TCPIP_H
 #include <ws2tcpip.h>
+#endif
+#ifdef __OS2__
+#include <libcx/net.h>
 #endif
 ])
   if test $ac_cv_type_struct_addrinfo = no; then
