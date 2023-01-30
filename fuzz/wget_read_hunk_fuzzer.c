@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Free Software Foundation, Inc.
+ * Copyright (c) 2019-2022 Free Software Foundation, Inc.
  *
  * This file is part of GNU Wget.
  *
@@ -74,14 +74,15 @@ struct my_context {
 	char peekbuf[512];
 };
 
-static int my_peek (int fd _GL_UNUSED, char *buf, int bufsize, void *arg)
+static int my_peek (int fd _GL_UNUSED, char *buf, int bufsize, void *arg, double d)
 {
+	(void) d;
 	if (g_read < g_size) {
 		struct my_context *ctx = (struct my_context *) arg;
 		int n = rand() % (g_size - g_read);
 		if (n > bufsize)
 			n = bufsize;
-		if (n > sizeof(ctx->peekbuf))
+		if (n > (int) sizeof(ctx->peekbuf))
 			n = sizeof(ctx->peekbuf);
 		memcpy(buf, g_data + g_read, n);
 		memcpy(ctx->peekbuf, g_data + g_read, n);
@@ -91,8 +92,9 @@ static int my_peek (int fd _GL_UNUSED, char *buf, int bufsize, void *arg)
 	}
 	return 0;
 }
-static int my_read (int fd _GL_UNUSED, char *buf, int bufsize, void *arg)
+static int my_read (int fd _GL_UNUSED, char *buf, int bufsize, void *arg, double d)
 {
+	(void) d;
 	struct my_context *ctx = (struct my_context *) arg;
 
 	if (ctx->peeklen) {
@@ -189,7 +191,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	g_size = size;
 	g_read = 0;
 
-	struct my_context *ctx = calloc(1, sizeof(struct my_context));
+	struct my_context *ctx = (struct my_context *) calloc(1, sizeof(struct my_context));
 	fd_register_transport(99, &my_transport, ctx);
 
 	while ((hunk = fd_read_hunk(99, response_head_terminator, 512, 65536)))

@@ -1,19 +1,19 @@
-/* Copyright (C) 2002, 2004-2005, 2007, 2009-2019 Free Software Foundation,
+/* Copyright (C) 2002, 2004-2005, 2007, 2009-2022 Free Software Foundation,
    Inc.
    This file is part of the GNU C Library.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3, or (at your option)
-   any later version.
+   This file is free software: you can redistribute it and/or modify
+   it under the terms of the GNU Lesser General Public License as
+   published by the Free Software Foundation; either version 2.1 of the
+   License, or (at your option) any later version.
 
-   This program is distributed in the hope that it will be useful,
+   This file is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU Lesser General Public License for more details.
 
-   You should have received a copy of the GNU General Public License along
-   with this program; if not, see <https://www.gnu.org/licenses/>.  */
+   You should have received a copy of the GNU Lesser General Public License
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #ifndef _LIBC
 # include <config.h>
@@ -28,6 +28,7 @@
 #endif
 #include <limits.h>
 #include <string.h>
+#include <strings.h>
 #include <stdbool.h>
 
 #ifdef _LIBC
@@ -202,11 +203,12 @@ day_of_the_week (struct tm *tm)
      difference between this data in the one on TM and so determine
      the weekday.  */
   int corr_year = 1900 + tm->tm_year - (tm->tm_mon < 2);
+  int corr_quad = corr_year / 4;
   int wday = (-473
               + (365 * (tm->tm_year - 70))
-              + (corr_year / 4)
-              - ((corr_year / 4) / 25) + ((corr_year / 4) % 25 < 0)
-              + (((corr_year / 4) / 25) / 4)
+              + corr_quad
+              - ((corr_quad + (corr_quad < 0)) / 25 - (corr_quad < 0))
+              + ((corr_quad / 25) / 4)
               + __mon_yday[0][tm->tm_mon]
               + tm->tm_mday - 1);
   tm->tm_wday = ((wday % 7) + 7) % 7;
@@ -682,7 +684,7 @@ __strptime_internal (rp, fmt, tm, decided, era_cnt LOCALE_PARAM)
              specify hours.  If fours digits are used, minutes are
              also specified.  */
           {
-            bool neg _GL_UNUSED;
+            _GL_UNUSED bool neg;
             int n;
 
             val = 0;

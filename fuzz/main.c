@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 Free Software Foundation, Inc.
+ * Copyright (c) 2017-2022 Free Software Foundation, Inc.
  *
  * This file is part of GNU Wget.
  *
@@ -68,30 +68,15 @@ static int test_all_from(const char *dirname)
 
 int main(int argc, char **argv)
 {
-	// if VALGRIND testing is enabled, we have to call ourselves with valgrind checking
-	const char *valgrind = getenv("VALGRIND_TESTS");
 	const char *target;
 	size_t target_len;
 
-	if (!valgrind || !*valgrind || !strcmp(valgrind, "0")) {
-		// fallthrough
-	}
-	else if (!strcmp(valgrind, "1")) {
-		char cmd[strlen(argv[0]) + 256];
-
-		snprintf(cmd, sizeof(cmd), "VALGRIND_TESTS=\"\" valgrind --error-exitcode=301 --leak-check=yes --show-reachable=yes --track-origins=yes %s", argv[0]);
-		return system(cmd) != 0;
-	} else {
-		char cmd[strlen(valgrind) + strlen(argv[0]) + 32];
-
-		snprintf(cmd, sizeof(cmd), "VALGRIND_TESTS="" %s %s", valgrind, argv[0]);
-		return system(cmd) != 0;
-	}
-
-	if ((target = strrchr(argv[0], SLASH)))
-		target = strrchr(target, '/');
-	else
+	if ((target = strrchr(argv[0], SLASH))) {
+		if (strrchr(target, '/'))
+			target = strrchr(target, '/');
+	} else
 		target = strrchr(argv[0], '/');
+
 	target = target ? target + 1 : argv[0];
 
 	if (strncmp(target, "lt-", 3) == 0)
