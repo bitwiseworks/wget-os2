@@ -23,7 +23,11 @@
 
 /* Specification.  */
 #if HAVE_OPENSSL_MD5
+#ifndef __OS2__
 # define GL_OPENSSL_INLINE _GL_EXTERN_INLINE
+#else
+# define GL_OPENSSL_INLINE _GL_INLINE
+#endif
 #endif
 #include "md5.h"
 
